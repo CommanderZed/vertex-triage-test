@@ -6,6 +6,7 @@ import json
 import time
 import csv
 import io
+import datetime
 from pydantic import BaseModel, ValidationError
 from typing import Literal, List
 
@@ -70,6 +71,11 @@ st.markdown("""
         font-size: 18px;
         margin-right: 0;
     }
+    /* Hide Streamlit Cloud chrome */
+    .stAppDeployButton { display: none !important; }
+    [data-testid="manage-app-button"] { display: none !important; }
+    ._profileContainer_gzau3_53 { display: none !important; }
+    #MainMenu { visibility: hidden; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -89,14 +95,13 @@ st.markdown(
 
 with st.sidebar:
     st.markdown(
-        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">'
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;margin-top:-2rem;">'
         '<span class="material-symbols-outlined filled" style="font-size:28px;color:#4285F4;">cloud</span>'
-        '<span style="font-size:1.4rem;font-weight:700;">Vertex Triage Test</span>'
+        '<span style="font-size:1.4rem;font-weight:700;">Vertex Triage</span>'
         '</div>',
         unsafe_allow_html=True,
     )
     st.caption("Gemini as a Deterministic Logic Engine")
-    st.divider()
 
     # Load API key silently from secrets
     api_key = st.secrets.get("GEMINI_API_KEY", "")
@@ -112,8 +117,6 @@ with st.sidebar:
         ],
         help="Switch domains instantly — each has its own Pydantic schema and output layout.",
     )
-
-    st.divider()
 
     # ── What is this? ─────────────────────────────────────────────────────
     with st.expander(":material/help: What is this?", expanded=False):
@@ -163,8 +166,6 @@ with st.sidebar:
             "case management) with zero manual re-keying."
         )
 
-    st.divider()
-
     # ── Credit system ──────────────────────────────────────────────────────
     STARTING_CREDITS = 10
 
@@ -187,12 +188,12 @@ with st.sidebar:
     elif credits_left == 0:
         st.caption(":material/block: Demo credits exhausted.")
 
-    st.divider()
     st.markdown(
-        '<div style="font-size:0.82rem;opacity:0.7;">'
-        '<span class="material-symbols-outlined" style="font-size:16px;">science</span>'
-        '<strong>Demonstration only</strong> — Not for production use. '
-        'All data is synthetic. Feb 2026.'
+        '<div style="font-size:0.82rem;opacity:0.7;display:flex;align-items:center;gap:6px;">'
+        '<span class="material-symbols-outlined" style="font-size:16px;">person</span>'
+        'Made by <a href="https://www.linkedin.com/in/zacharypolio/" '
+        'target="_blank" style="color:inherit;text-decoration:underline;">'
+        'Zack Polio</a>'
         '</div>',
         unsafe_allow_html=True,
     )
@@ -391,6 +392,8 @@ SECTOR_CONFIG = {
         "title": "HCLS Intake Portal",
         "subtitle": "**Schema-locked clinical triage** — paste a nurse's note and let Gemini extract structured output.",
         "example": HEALTHCARE_EXAMPLE,
+        "manual_minutes": 12,
+        "manual_label": "Avg nurse intake triage",
     },
     "Industrial (Manufacturing)": {
         "schema": IndustrialSchema,
@@ -400,6 +403,8 @@ SECTOR_CONFIG = {
         "title": "IoT Telemetry Dashboard",
         "subtitle": "**Schema-locked industrial triage** — paste a sensor log and let Gemini extract structured output.",
         "example": INDUSTRIAL_EXAMPLE,
+        "manual_minutes": 25,
+        "manual_label": "Avg manual log review",
     },
     "Cybersecurity (SecOps)": {
         "schema": CybersecuritySchema,
@@ -409,6 +414,8 @@ SECTOR_CONFIG = {
         "title": "SecOps Threat Console",
         "subtitle": "**Schema-locked threat triage** — paste a SIEM alert and let Gemini extract structured output.",
         "example": CYBERSECURITY_EXAMPLE,
+        "manual_minutes": 18,
+        "manual_label": "Avg analyst alert triage",
     },
     "Financial Services (FinOps)": {
         "schema": FinancialSchema,
@@ -418,6 +425,8 @@ SECTOR_CONFIG = {
         "title": "FinOps Risk Console",
         "subtitle": "**Schema-locked financial triage** — paste a transaction alert and let Gemini extract structured output.",
         "example": FINANCIAL_EXAMPLE,
+        "manual_minutes": 35,
+        "manual_label": "Avg compliance review",
     },
     "Energy & Utilities": {
         "schema": EnergySchema,
@@ -427,6 +436,8 @@ SECTOR_CONFIG = {
         "title": "Grid Operations Console",
         "subtitle": "**Schema-locked grid triage** — paste a fault event log and let Gemini extract structured output.",
         "example": ENERGY_EXAMPLE,
+        "manual_minutes": 15,
+        "manual_label": "Avg dispatcher fault review",
     },
 }
 
@@ -785,6 +796,20 @@ if analyze_clicked:
             st.session_state.last_latency = latency
             st.session_state.last_sector = sector
 
+            # Track session history for analytics
+            if "triage_history" not in st.session_state:
+                st.session_state.triage_history = []
+            top_key = list(result.keys())[0]
+            st.session_state.triage_history.append({
+                "run": len(st.session_state.triage_history) + 1,
+                "time": datetime.datetime.now().strftime("%H:%M:%S"),
+                "domain": sector.split("(")[0].strip(),
+                "latency": round(latency, 2),
+                "manual_min": cfg.get("manual_minutes", 15),
+                "top_field": top_key.replace("_", " ").title(),
+                "top_value": str(result[top_key]),
+            })
+
             status.update(label="Analysis complete", state="complete", expanded=False)
 
         except json.JSONDecodeError as e:
@@ -1084,3 +1109,150 @@ if "last_result" in st.session_state and st.session_state.get("last_sector") == 
     # ── Raw JSON payload ─────────────────────────────────────────────────────
     with st.expander(":material/code: View Raw JSON Payload", expanded=False):
         st.json(result)
+
+    # ── Speed comparison ──────────────────────────────────────────────────────
+    manual_min = cfg.get("manual_minutes", 15)
+    manual_label = cfg.get("manual_label", "Avg manual review")
+    manual_sec = manual_min * 60
+    speedup = manual_sec / latency if latency > 0 else 0
+
+    st.markdown("---")
+    st.markdown(
+        '<div class="section-label">'
+        '<span class="material-symbols-outlined filled" style="font-size:20px;">speed</span>'
+        ' Speed Comparison'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    gemini_pct = min(latency / manual_sec * 100, 100)
+
+    st.markdown(
+        f"""
+        <div style="background:#f8f9fa;border-radius:10px;padding:20px 24px;margin-top:8px;">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px;">
+                <span style="font-weight:600;font-size:0.95rem;">
+                    <span class="material-symbols-outlined filled" style="font-size:18px;color:#4285F4;">bolt</span>
+                    Gemini 3.0 Pro
+                </span>
+                <span style="font-weight:700;font-size:1.1rem;color:#4285F4;">{latency:.1f}s</span>
+            </div>
+            <div style="background:#e8eaed;border-radius:6px;height:14px;overflow:hidden;margin-bottom:20px;">
+                <div style="background:linear-gradient(90deg,#4285F4,#34A853);height:100%;
+                            border-radius:6px;width:{max(gemini_pct, 1.5):.1f}%;
+                            transition:width 0.6s ease;"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px;">
+                <span style="font-weight:600;font-size:0.95rem;">
+                    <span class="material-symbols-outlined" style="font-size:18px;color:#999;">person</span>
+                    {manual_label}
+                </span>
+                <span style="font-weight:700;font-size:1.1rem;color:#999;">{manual_min} min</span>
+            </div>
+            <div style="background:#e8eaed;border-radius:6px;height:14px;overflow:hidden;margin-bottom:16px;">
+                <div style="background:#bdc1c6;height:100%;border-radius:6px;width:100%;"></div>
+            </div>
+            <div style="text-align:center;padding-top:4px;border-top:1px solid #e8eaed;">
+                <span style="font-size:1.5rem;font-weight:800;color:#34A853;">{speedup:,.0f}×</span>
+                <span style="font-size:0.9rem;color:#5f6368;"> faster than manual triage</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # ── Session Analytics ─────────────────────────────────────────────────────
+    history = st.session_state.get("triage_history", [])
+
+    if len(history) >= 1:
+        st.markdown("---")
+        st.markdown(
+            '<div class="section-label">'
+            '<span class="material-symbols-outlined filled" style="font-size:20px;">monitoring</span>'
+            ' Session Analytics'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+        # ── Cumulative metrics row ────────────────────────────────────────
+        total_runs = len(history)
+        avg_latency = sum(h["latency"] for h in history) / total_runs
+        total_manual_saved_sec = sum(h["manual_min"] * 60 - h["latency"] for h in history)
+        total_manual_saved_min = total_manual_saved_sec / 60
+        domains_used = len(set(h["domain"] for h in history))
+
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric(":material/counter_1: Triages Run", total_runs)
+        m2.metric(":material/avg_pace: Avg Latency", f"{avg_latency:.1f}s")
+        m3.metric(":material/timer: Time Saved", f"{total_manual_saved_min:.0f} min")
+        m4.metric(":material/domain: Domains Used", domains_used)
+
+    # ── ROI Projector ─────────────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown(
+        '<div class="section-label">'
+        '<span class="material-symbols-outlined filled" style="font-size:20px;">calculate</span>'
+        ' ROI Projector'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+    st.caption("Estimate annual savings if this triage pattern were deployed at scale.")
+
+    roi1, roi2 = st.columns(2)
+    with roi1:
+        daily_volume = st.slider(
+            "Daily triage events",
+            min_value=10, max_value=5000, value=200, step=10,
+            help="How many events your team triages per day.",
+        )
+    with roi2:
+        hourly_cost = st.slider(
+            "Analyst hourly cost ($)",
+            min_value=25, max_value=250, value=75, step=5,
+            help="Fully loaded cost per analyst hour.",
+        )
+
+    manual_hrs_per_event = manual_min / 60
+    gemini_hrs_per_event = avg_latency / 3600 if len(history) >= 1 else latency / 3600
+    annual_events = daily_volume * 260  # business days
+
+    manual_annual_hrs = annual_events * manual_hrs_per_event
+    gemini_annual_hrs = annual_events * gemini_hrs_per_event
+    saved_hrs = manual_annual_hrs - gemini_annual_hrs
+    saved_cost = saved_hrs * hourly_cost
+
+    r1, r2, r3 = st.columns(3)
+    r1.metric(":material/schedule: Annual Hours Saved", f"{saved_hrs:,.0f} hrs")
+    r2.metric(":material/payments: Annual Cost Savings", f"${saved_cost:,.0f}")
+    r3.metric(":material/groups: FTE Equivalent Freed", f"{saved_hrs / 2080:.1f}")
+
+    # Visual savings breakdown
+    st.markdown(
+        f"""
+        <div style="background:#f8f9fa;border-radius:10px;padding:16px 24px;margin-top:8px;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
+                <span style="font-size:0.85rem;color:#5f6368;">Manual cost @ {daily_volume} events/day</span>
+                <span style="font-weight:700;color:#EA4335;">${manual_annual_hrs * hourly_cost:,.0f}/yr</span>
+            </div>
+            <div style="background:#e8eaed;border-radius:6px;height:12px;overflow:hidden;margin-bottom:16px;">
+                <div style="background:#EA4335;height:100%;border-radius:6px;width:100%;"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
+                <span style="font-size:0.85rem;color:#5f6368;">With Gemini automation</span>
+                <span style="font-weight:700;color:#34A853;">${gemini_annual_hrs * hourly_cost:,.0f}/yr</span>
+            </div>
+            <div style="background:#e8eaed;border-radius:6px;height:12px;overflow:hidden;margin-bottom:12px;">
+                <div style="background:#34A853;height:100%;border-radius:6px;
+                            width:{max(gemini_annual_hrs / manual_annual_hrs * 100, 0.5):.2f}%;"></div>
+            </div>
+            <div style="text-align:center;padding-top:8px;border-top:1px solid #e8eaed;">
+                <span style="font-size:0.8rem;color:#5f6368;">
+                    Based on <strong>{annual_events:,}</strong> events/yr ·
+                    <strong>{manual_min} min</strong> manual avg ·
+                    <strong>${hourly_cost}/hr</strong> analyst cost
+                </span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
