@@ -21,7 +21,9 @@ st.set_page_config(
 
 # Inject Google Material Symbols for use in markdown/HTML
 st.markdown("""
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet" />
+<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet" />
 <style>
     .material-symbols-outlined {
         font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
@@ -135,6 +137,30 @@ with st.sidebar:
             "**3. Validation** — The SDK auto-parses the response into "
             "a typed Pydantic object. If the JSON doesn't match, it fails loudly.\n\n"
             "**Stack:** Streamlit · Google GenAI SDK · Gemini 3.0 Pro · Pydantic v2"
+        )
+
+    # ── Why build this? ───────────────────────────────────────────────────
+    with st.expander(":material/lightbulb: Why build this?", expanded=False):
+        st.markdown(
+            "Enterprise teams drown in **unstructured data** — nurse handoff notes, "
+            "sensor logs, SOC alerts, wire-transfer narratives. Today that data gets "
+            "triaged manually, slowly, and inconsistently.\n\n"
+            "This pattern — **LLM + locked schema** — turns free text into "
+            "**structured, actionable records** in seconds. Real-world applications:\n\n"
+            "- **Healthcare** — Auto-classify ER intake notes by acuity so "
+            "the sickest patients are seen first, reducing wait-to-treatment.\n"
+            "- **Manufacturing** — Convert sensor anomalies into prioritized "
+            "work orders before an unplanned shutdown costs millions.\n"
+            "- **Cybersecurity** — Instantly triage a flood of SIEM alerts into "
+            "severity tiers so analysts focus on real threats, not noise.\n"
+            "- **Financial Services** — Flag suspicious transactions with "
+            "structured risk scores for compliance teams and SAR filings.\n"
+            "- **Energy & Utilities** — Classify grid fault reports in "
+            "real time to accelerate restoration and protect critical infrastructure.\n\n"
+            "The ROI is **speed, consistency, and auditability** — "
+            "every output conforms to a contract, is machine-readable, "
+            "and can flow directly into downstream systems (EHR, CMMS, SOAR, "
+            "case management) with zero manual re-keying."
         )
 
     st.divider()
@@ -572,8 +598,12 @@ if not api_key:
     st.error("Application not configured. The API key is missing from Streamlit secrets.", icon=":material/error:")
     st.stop()
 
-# Initialize the Google GenAI client
-client = genai.Client(api_key=api_key)
+@st.cache_resource(show_spinner=False)
+def _get_genai_client(key: str) -> genai.Client:
+    """Cache the GenAI client so it persists across reruns."""
+    return genai.Client(api_key=key)
+
+client = _get_genai_client(api_key)
 
 # ── Input section ────────────────────────────────────────────────────────────
 
